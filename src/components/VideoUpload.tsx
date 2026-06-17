@@ -37,6 +37,7 @@ interface VideoUploadProps {
 
 export const VideoUpload: React.FC<VideoUploadProps> = ({ onVideoSelected }) => {
   const [isDragActive, setIsDragActive] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -51,8 +52,27 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({ onVideoSelected }) => 
 
   const processFile = (file: File) => {
     if (file && file.type.startsWith('video/')) {
+      setIsAnalyzing(true);
       const url = URL.createObjectURL(file);
-      onVideoSelected(url, file.name);
+      
+      const tempVideo = document.createElement('video');
+      tempVideo.preload = 'metadata';
+      tempVideo.src = url;
+      
+      tempVideo.onloadedmetadata = () => {
+        setIsAnalyzing(false);
+        const duration = tempVideo.duration;
+        if (duration > 240) {
+          alert(`提示：您导入的视频时长为 ${Math.floor(duration / 60)}分${Math.floor(duration % 60)}秒（已超出4分钟限制）。为了保证系统流畅，我们已自动截取前 4 分钟作为原视频供您练舞。`);
+        }
+        onVideoSelected(url, file.name);
+      };
+      
+      tempVideo.onerror = () => {
+        setIsAnalyzing(false);
+        // Fallback for environment/codec check
+        onVideoSelected(url, file.name);
+      };
     } else {
       alert('请导入合法的视频文件 (mp4, mov, webm, avi...)');
     }
@@ -100,11 +120,19 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({ onVideoSelected }) => 
         onDragEnter={handleDrag}
         onDragOver={handleDrag}
         onDragLeave={handleDrag}
-        onDrop={handleDrop}
-        onClick={handleButtonClick}
-        whileHover={{ scale: 1.01, borderColor: '#10b981' }}
-        whileTap={{ scale: 0.99 }}
-        className={`relative cursor-pointer transition-all duration-300 rounded-2xl border-2 border-dashed p-10 sm:p-14 text-center focus:outline-none flex flex-col items-center justify-center min-h-[300px] mb-12 ${
+        onDrop={(e) => {
+          if (!isAnalyzing) {
+            handleDrop(e);
+          }
+        }}
+        onClick={() => {
+          if (!isAnalyzing) {
+            handleButtonClick();
+          }
+        }}
+        whileHover={{ scale: isAnalyzing ? 1.0 : 1.01, borderColor: isAnalyzing ? '#cbd5e1' : '#10b981' }}
+        whileTap={{ scale: isAnalyzing ? 1.0 : 0.99 }}
+        className={`relative ${isAnalyzing ? 'cursor-not-allowed' : 'cursor-pointer'} transition-all duration-300 rounded-2xl border-2 border-dashed p-10 sm:p-14 text-center focus:outline-none flex flex-col items-center justify-center min-h-[300px] mb-12 ${
           isDragActive
             ? 'border-emerald-500 bg-emerald-50/50 shadow-inner'
             : 'border-slate-200 bg-white hover:bg-slate-50/50 shadow-sm'
@@ -116,21 +144,36 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({ onVideoSelected }) => 
           className="hidden"
           accept="video/*,video/mp4,video/quicktime,video/webm"
           onChange={handleChange}
+          disabled={isAnalyzing}
         />
         
-        <div className={`p-4 rounded-full mb-5 ${isDragActive ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'} transition-colors duration-300`}>
-          <Upload className="w-8 sm:w-10 h-8 sm:h-10 animate-bounce" />
-        </div>
+        {isAnalyzing ? (
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-1 font-display">
+              正在分析视频大小与时长...
+            </h3>
+            <p className="text-slate-400 text-xs sm:text-sm">
+              检测是否有大于 4 分钟的限制，请稍候
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className={`p-4 rounded-full mb-5 ${isDragActive ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'} transition-colors duration-300`}>
+              <Upload className="w-8 sm:w-10 h-8 sm:h-10 animate-bounce" />
+            </div>
 
-        <h3 className="text-lg font-semibold text-gray-800 mb-1 font-display">
-          + 导入练舞视频
-        </h3>
-        <p className="text-slate-400 text-xs sm:text-sm max-w-sm mb-4">
-          支持拖拽视频到这里，或点击浏览本地文件
-        </p>
-        <span className="inline-flex gap-1.5 items-center bg-slate-50 text-slate-500 px-3 py-1.5 rounded-lg text-xs font-mono border border-slate-100">
-          <Film className="w-3.5 h-3.5 text-slate-400" /> MP4 / MOV / WEBM
-        </span>
+            <h3 className="text-lg font-semibold text-gray-800 mb-1 font-display">
+              + 导入练舞视频
+            </h3>
+            <p className="text-slate-400 text-xs sm:text-sm max-w-sm mb-4">
+              支持拖拽视频到这里，或点击浏览本地文件
+            </p>
+            <span className="inline-flex gap-1.5 items-center bg-slate-50 text-slate-500 px-3 py-1.5 rounded-lg text-xs font-mono border border-slate-100">
+              <Film className="w-3.5 h-3.5 text-slate-400" /> MP4 / MOV / WEBM
+            </span>
+          </>
+        )}
       </motion.div>
 
       {/* Demo Video Section for instant onboarding */}

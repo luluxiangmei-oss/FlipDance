@@ -83,16 +83,27 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({
 
     try {
       // 1. Resolve source sizes before initializing
-      const tempVideo = document.createElement('video');
-      tempVideo.src = videoUrl;
-      await new Promise<void>((resolve, reject) => {
-        tempVideo.onloadedmetadata = () => resolve();
-        tempVideo.onerror = () => reject(new Error('视频元数据解析失败'));
-      });
+      let videoWidth = 1280;
+      let videoHeight = 720;
+      let duration = 30;
 
-      const videoWidth = tempVideo.videoWidth || 1280;
-      const videoHeight = tempVideo.videoHeight || 720;
-      const duration = tempVideo.duration || 10;
+      try {
+        const tempVideo = document.createElement('video');
+        tempVideo.crossOrigin = "anonymous";
+        tempVideo.src = videoUrl;
+        await new Promise<void>((resolve, reject) => {
+          tempVideo.onloadedmetadata = () => resolve();
+          tempVideo.onerror = () => reject(new Error('视频元数据解析失败'));
+          // Safety timeout
+          setTimeout(() => reject(new Error('元数据解析超时间隔')), 4000);
+        });
+        videoWidth = tempVideo.videoWidth || 1280;
+        videoHeight = tempVideo.videoHeight || 720;
+        const rawDur = tempVideo.duration || 30;
+        duration = rawDur > 240 ? 240 : rawDur;
+      } catch (me) {
+        console.warn('视频元数据解析异常，启用备用分辨率(720p/30s): ', me);
+      }
 
       // 2. Setup Canvas based on Layout
       const canvas = canvasRef.current;
@@ -122,6 +133,7 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({
       // Unmute so audio pipeline gets data, but we don't connect 
       // the context to destination, ensuring SILENT encoding in the background!
       mainVideo.muted = false;
+      mainVideo.volume = 1.0;
       pipVideo.muted = true; // PiP remains completely quiet
 
       // Create browser-native audio capture node to extract main music
@@ -149,16 +161,20 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({
 
       // Prepare canvas capturing stream at 30fps
       const canvasStream = canvas.captureStream(30);
+      const combinedTracks = [...canvasStream.getVideoTracks()];
+
       if (audioTrack) {
-        canvasStream.addTrack(audioTrack);
+        combinedTracks.push(audioTrack);
       } else {
         // Fallback: capture main volume using captureStream of the video element if browser supports it
         try {
           const videoStream = (mainVideo as any).captureStream?.();
           const backupAudioTrack = videoStream?.getAudioTracks()[0];
-          if (backupAudioTrack) canvasStream.addTrack(backupAudioTrack);
+          if (backupAudioTrack) combinedTracks.push(backupAudioTrack);
         } catch (f) {}
       }
+
+      const combinedStream = new MediaStream(combinedTracks);
 
       // Determine appropriate mime types based on user selection
       let typeCandidate = '';
@@ -229,7 +245,7 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({
       setSelectedFormatLabel(formatLabel);
 
       const options = MediaRecorder.isTypeSupported(typeCandidate) ? { mimeType: typeCandidate } : undefined;
-      const recorder = new MediaRecorder(canvasStream, options);
+      const recorder = new MediaRecorder(combinedStream, options);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -239,6 +255,10 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({
       };
 
       recorder.onstop = () => {
+        try {
+          mainVideo.pause();
+          pipVideo.pause();
+        } catch (e) {}
         const resultBlob = new Blob(chunksRef.current, { type: typeCandidate || 'video/mp4' });
         
         // Calculate file size
