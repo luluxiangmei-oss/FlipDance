@@ -1,0 +1,6 @@
+{
+  "name": "FlipDance 舞步反转",
+  "description": "舞蹈教学视频一键镜面反转与强同步画中画学习工具，支持本地合成导出。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
